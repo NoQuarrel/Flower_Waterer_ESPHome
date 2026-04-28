@@ -1,0 +1,1083 @@
+esphome:
+  name: flower
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: watering_schedule_validate
+      - text_sensor.template.publish:
+          id: watered_1
+          state: !lambda |-
+            return id(last_watered_1);
+      - text_sensor.template.publish:
+          id: watered_2
+          state: !lambda |-
+            return id(last_watered_2);
+      - text_sensor.template.publish:
+          id: watered_3
+          state: !lambda |-
+            return id(last_watered_3);
+      - text_sensor.template.publish:
+          id: watered_4
+          state: !lambda |-
+            return id(last_watered_4);
+      - sensor.template.publish:
+          id: today_seconds_1
+          state: !lambda "return (float)id(today_watered_seconds_1);"
+      - sensor.template.publish:
+          id: today_seconds_2
+          state: !lambda "return (float)id(today_watered_seconds_2);"
+      - sensor.template.publish:
+          id: today_seconds_3
+          state: !lambda "return (float)id(today_watered_seconds_3);"
+      - sensor.template.publish:
+          id: today_seconds_4
+          state: !lambda "return (float)id(today_watered_seconds_4);"
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+logger: 
+
+api:
+  encryption:
+    key: !secret flower_api_key
+
+ota:
+  - platform: esphome
+    password: !secret flower_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  ap:
+    ssid: "Flower Fallback Hotspot"
+    password: !secret flower_ap_password
+
+captive_portal:
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: "CST-8"
+    on_time:
+      - seconds: 0
+        then:
+          - script.execute: watering_schedule_check
+      - hours: 0
+        minutes: 0
+        seconds: 0
+        then:
+          - lambda: |-
+              auto now = id(sntp_time).now();
+              std::string today = now.strftime("%Y-%m-%d");
+              if (id(today_date) != today) {
+                id(today_date) = today;
+                id(today_watered_seconds_1) = 0;
+                id(today_watered_seconds_2) = 0;
+                id(today_watered_seconds_3) = 0;
+                id(today_watered_seconds_4) = 0;
+              }
+
+globals:
+  - id: last_watering_schedule_fire
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 24
+    initial_value: "\"\""
+  - id: watering_schedule_mask
+    type: int
+    restore_value: no
+    initial_value: "15"
+  - id: watering_schedule_error
+    type: std::string
+    restore_value: no
+    initial_value: "\"\""
+  - id: last_watered_1
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 16
+    initial_value: "\"无记录\""
+  - id: last_watered_2
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 16
+    initial_value: "\"无记录\""
+  - id: last_watered_3
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 16
+    initial_value: "\"无记录\""
+  - id: last_watered_4
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 16
+    initial_value: "\"无记录\""
+  - id: watering_by_script
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: pump_run_ticks_1
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: pump_run_ticks_2
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: pump_run_ticks_3
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: pump_run_ticks_4
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: today_watered_seconds_1
+    type: int
+    restore_value: yes
+    initial_value: "0"
+  - id: today_watered_seconds_2
+    type: int
+    restore_value: yes
+    initial_value: "0"
+  - id: today_watered_seconds_3
+    type: int
+    restore_value: yes
+    initial_value: "0"
+  - id: today_watered_seconds_4
+    type: int
+    restore_value: yes
+    initial_value: "0"
+  - id: today_date
+    type: std::string
+    restore_value: yes
+    max_restore_data_length: 16
+    initial_value: "\"\""
+
+select:
+  - platform: template
+    name: "浇水模式 Mode"
+    id: watering_mode
+    icon: "mdi:toggle-switch"
+    optimistic: true
+    restore_value: true
+    options:
+      - "关闭"
+      - "定时"
+    initial_option: "关闭"
+    on_value:
+      then:
+        - script.execute: watering_schedule_validate
+
+number:
+  - platform: template
+    name: "测量间隔 Measure Interval"
+    id: measure_interval
+    min_value: 2
+    max_value: 60
+    step: 1
+    initial_value: 3
+    unit_of_measurement: "min"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P1浇水时长 Water Time"
+    id: watering_seconds_1
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 60
+    step: 1
+    initial_value: 10
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P1水泵功率 Pump Power"
+    id: watering_percent_1
+    icon: "mdi:water-percent"
+    min_value: 1
+    max_value: 100
+    step: 1
+    initial_value: 20
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P2浇水时长 Water Time"
+    id: watering_seconds_2
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 60
+    step: 1
+    initial_value: 10
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P2水泵功率 Pump Power"
+    id: watering_percent_2
+    icon: "mdi:water-percent"
+    min_value: 1
+    max_value: 100
+    step: 1
+    initial_value: 20
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P3浇水时长 Water Time"
+    id: watering_seconds_3
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 60
+    step: 1
+    initial_value: 10
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P3水泵功率 Pump Power"
+    id: watering_percent_3
+    icon: "mdi:water-percent"
+    min_value: 1
+    max_value: 100
+    step: 1
+    initial_value: 20
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P4浇水时长 Water Time"
+    id: watering_seconds_4
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 60
+    step: 1
+    initial_value: 10
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P4水泵功率 Pump Power"
+    id: watering_percent_4
+    icon: "mdi:water-percent"
+    min_value: 1
+    max_value: 100
+    step: 1
+    initial_value: 20
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P1每日上限 Daily Limit"
+    id: daily_limit_1
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 600
+    step: 10
+    initial_value: 180
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P2每日上限 Daily Limit"
+    id: daily_limit_2
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 600
+    step: 10
+    initial_value: 180
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P3每日上限 Daily Limit"
+    id: daily_limit_3
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 600
+    step: 10
+    initial_value: 180
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+  - platform: template
+    name: "P4每日上限 Daily Limit"
+    id: daily_limit_4
+    icon: "mdi:timer-outline"
+    min_value: 0
+    max_value: 600
+    step: 10
+    initial_value: 180
+    unit_of_measurement: "s"
+    optimistic: true
+    restore_value: true
+    mode: box
+
+text:
+  - platform: template
+    name: "定时浇水 Water Schedule(例如06:30=12,18:00=4)"
+    id: watering_times
+    icon: "mdi:clock-outline"
+    mode: text
+    optimistic: true
+    restore_value: true
+    on_value:
+      then:
+        - script.execute: watering_schedule_validate
+
+switch:
+  - platform: template
+    name: "忽略缺水"
+    id: ignore_water_check
+    icon: "mdi:water-pump"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+output:
+  - platform: ledc
+    #需熔断保险
+    pin: 11
+    frequency: 1000 Hz
+    id: pump_1_output
+
+  - platform: ledc
+    pin: 18
+    frequency: 1000 Hz
+    id: pump_2_output
+
+  - platform: ledc
+    pin:
+      number: 13
+      ignore_pin_validation_error: true
+    frequency: 1000 Hz
+    id: pump_3_output
+
+  - platform: ledc
+    pin:
+      number: 12
+      ignore_pin_validation_error: true
+    frequency: 1000 Hz
+    id: pump_4_output
+
+# ==========================================
+# 水泵控制
+# ==========================================
+light:
+  - platform: monochromatic
+    output: pump_1_output
+    name: "水泵1"
+    icon: "mdi:water-pump"
+    id: pump_1
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: |-
+                    return !id(tank_empty).state;
+                - lambda: |-
+                    return id(ignore_water_check).state;
+            then:
+              - if:
+                  condition:
+                    time.has_time:
+                  then:
+                    - text_sensor.template.publish:
+                        id: watered_1
+                        state: !lambda |-
+                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          id(last_watered_1) = stamp;
+                          return stamp;
+                    - if:
+                        condition:
+                          lambda: |-
+                            return !id(watering_by_script);
+                        then:
+                          - lambda: |-
+                              id(pump_run_ticks_1) = (int)(id(watering_seconds_1).state * 10);
+                          - while:
+                              condition:
+                                lambda: |-
+                                  return id(pump_run_ticks_1) > 0 &&
+                                         (!id(tank_empty).state || id(ignore_water_check).state);
+                              then:
+                                - delay: 100ms
+                                - lambda: |-
+                                    id(pump_run_ticks_1)--;
+                          - light.turn_off: pump_1
+            else:
+              - light.turn_off: pump_1
+
+  - platform: monochromatic
+    output: pump_2_output
+    name: "水泵2"
+    icon: "mdi:water-pump"
+    id: pump_2
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: |-
+                    return !id(tank_empty).state;
+                - lambda: |-
+                    return id(ignore_water_check).state;
+            then:
+              - if:
+                  condition:
+                    time.has_time:
+                  then:
+                    - text_sensor.template.publish:
+                        id: watered_2
+                        state: !lambda |-
+                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          id(last_watered_2) = stamp;
+                          return stamp;
+                    - if:
+                        condition:
+                          lambda: |-
+                            return !id(watering_by_script);
+                        then:
+                          - lambda: |-
+                              id(pump_run_ticks_2) = (int)(id(watering_seconds_2).state * 10);
+                          - while:
+                              condition:
+                                lambda: |-
+                                  return id(pump_run_ticks_2) > 0 &&
+                                         (!id(tank_empty).state || id(ignore_water_check).state);
+                              then:
+                                - delay: 100ms
+                                - lambda: |-
+                                    id(pump_run_ticks_2)--;
+                          - light.turn_off: pump_2
+            else:
+              - light.turn_off: pump_2
+
+  - platform: monochromatic
+    output: pump_3_output
+    name: "水泵3"
+    icon: "mdi:water-pump"
+    id: pump_3
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: |-
+                    return !id(tank_empty).state;
+                - lambda: |-
+                    return id(ignore_water_check).state;
+            then:
+              - if:
+                  condition:
+                    time.has_time:
+                  then:
+                    - text_sensor.template.publish:
+                        id: watered_3
+                        state: !lambda |-
+                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          id(last_watered_3) = stamp;
+                          return stamp;
+                    - if:
+                        condition:
+                          lambda: |-
+                            return !id(watering_by_script);
+                        then:
+                          - lambda: |-
+                              id(pump_run_ticks_3) = (int)(id(watering_seconds_3).state * 10);
+                          - while:
+                              condition:
+                                lambda: |-
+                                  return id(pump_run_ticks_3) > 0 &&
+                                         (!id(tank_empty).state || id(ignore_water_check).state);
+                              then:
+                                - delay: 100ms
+                                - lambda: |-
+                                    id(pump_run_ticks_3)--;
+                          - light.turn_off: pump_3
+            else:
+              - light.turn_off: pump_3
+
+  - platform: monochromatic
+    output: pump_4_output
+    name: "水泵4"
+    icon: "mdi:water-pump"
+    id: pump_4
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: |-
+                    return !id(tank_empty).state;
+                - lambda: |-
+                    return id(ignore_water_check).state;
+            then:
+              - if:
+                  condition:
+                    time.has_time:
+                  then:
+                    - text_sensor.template.publish:
+                        id: watered_4
+                        state: !lambda |-
+                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          id(last_watered_4) = stamp;
+                          return stamp;
+                    - if:
+                        condition:
+                          lambda: |-
+                            return !id(watering_by_script);
+                        then:
+                          - lambda: |-
+                              id(pump_run_ticks_4) = (int)(id(watering_seconds_4).state * 10);
+                          - while:
+                              condition:
+                                lambda: |-
+                                  return id(pump_run_ticks_4) > 0 &&
+                                         (!id(tank_empty).state || id(ignore_water_check).state);
+                              then:
+                                - delay: 100ms
+                                - lambda: |-
+                                    id(pump_run_ticks_4)--;
+                          - light.turn_off: pump_4
+            else:
+              - light.turn_off: pump_4
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi 信号强度 Signal"
+    id: wifi_rssi
+    update_interval: 5min
+
+  - platform: template
+    name: "P1今日浇水时长 Today"
+    id: today_seconds_1
+    icon: "mdi:timer-outline"
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: never
+
+  - platform: template
+    name: "P2今日浇水时长 Today"
+    id: today_seconds_2
+    icon: "mdi:timer-outline"
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: never
+
+  - platform: template
+    name: "P3今日浇水时长 Today"
+    id: today_seconds_3
+    icon: "mdi:timer-outline"
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: never
+    
+  - platform: template
+    name: "P4今日浇水时长 Today"
+    id: today_seconds_4
+    icon: "mdi:timer-outline"
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: never
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: 20
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "水箱缺水"
+    icon: "mdi:water"
+    id: tank_empty
+
+text_sensor:
+  - platform: template
+    name: "定时格式提示 Schedule Hint"
+    id: watering_schedule_hint
+    icon: "mdi:alert-circle-outline"
+    entity_category: diagnostic
+    update_interval: never
+
+  - platform: template
+    name: "P1上次浇水时间 Last Time"
+    id: watered_1
+    update_interval: never
+
+  - platform: template
+    name: "P2上次浇水时间 Last Time"
+    id: watered_2
+    update_interval: never
+
+  - platform: template
+    name: "P3上次浇水时间 Last Time"
+    id: watered_3
+    update_interval: never
+    
+  - platform: template
+    name: "P4上次浇水时间 Last Time"
+    id: watered_4
+    update_interval: never
+
+# ==========================================
+# 脚本
+# ==========================================
+script:
+  - id: watering_schedule_validate
+    mode: restart
+    then:
+      - lambda: |-
+          std::string mode = id(watering_mode).current_option().c_str();
+          auto trim = [](std::string value) -> std::string {
+            const char* ws = " \t\r\n";
+            size_t start = value.find_first_not_of(ws);
+            if (start == std::string::npos) return "";
+            size_t end = value.find_last_not_of(ws);
+            return value.substr(start, end - start + 1);
+          };
+
+          auto is_valid_hhmm = [](const std::string &value) -> bool {
+            if (value.size() != 5) return false;
+            if (value[2] != ':') return false;
+            if (!std::isdigit((unsigned char)value[0])) return false;
+            if (!std::isdigit((unsigned char)value[1])) return false;
+            if (!std::isdigit((unsigned char)value[3])) return false;
+            if (!std::isdigit((unsigned char)value[4])) return false;
+            int hour = (value[0] - '0') * 10 + (value[1] - '0');
+            int minute = (value[3] - '0') * 10 + (value[4] - '0');
+            return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+          };
+
+          std::string schedule = id(watering_times).state;
+          std::string error = "";
+          if (mode == "关闭") {
+            error = "";
+          } else if (mode == "传感器") {
+            error = "";
+          } else {
+            std::string schedule_trimmed = trim(schedule);
+            if (schedule_trimmed.empty()) {
+              error = "请填写定时，例如 06:30=13,18:00=24";
+            } else {
+              size_t start = 0;
+              while (start < schedule.size()) {
+                size_t end = schedule.find_first_of(",;\n", start);
+                std::string token = schedule.substr(start, end == std::string::npos ? schedule.size() - start : end - start);
+                token = trim(token);
+                if (!token.empty()) {
+                  size_t sep = token.find_first_of("=|");
+                  std::string time_part = trim(sep == std::string::npos ? token : token.substr(0, sep));
+                  if (!is_valid_hhmm(time_part)) {
+                    error = "定时错误: " + time_part + " 不是 HH:MM";
+                    break;
+                  }
+                  if (sep != std::string::npos) {
+                    std::string mask_part = trim(token.substr(sep + 1));
+                    if (mask_part.empty()) {
+                      error = "定时错误: " + time_part + "= 后面不能为空";
+                      break;
+                    }
+                    for (char c : mask_part) {
+                      if (c != '1' && c != '2' && c != '3' && c != '4') {
+                        error = "定时错误: 只能包含 1-4";
+                        break;
+                      }
+                    }
+                    if (!error.empty()) break;
+                  }
+                }
+                if (end == std::string::npos) break;
+                start = end + 1;
+              }
+            }
+          }
+
+          id(watering_schedule_error) = error;
+      - text_sensor.template.publish:
+          id: watering_schedule_hint
+          state: !lambda |-
+            std::string mode = id(watering_mode).current_option().c_str();
+            if (mode == "定时" && !id(watering_schedule_error).empty()) {
+              return id(watering_schedule_error);
+            } else if (mode == "定时") {
+              return std::string("定时格式正确");
+            } else {
+              return std::string("未运行定时模式");
+            }
+      - if:
+          condition:
+            lambda: |-
+              return id(watering_schedule_error).empty();
+          then:
+            - homeassistant.action:
+                action: persistent_notification.dismiss
+                data:
+                  notification_id: watering_schedule
+          else:
+            - homeassistant.action:
+                action: persistent_notification.create
+                data:
+                  notification_id: watering_schedule
+                  title: Water Schedule
+                  message: !lambda |-
+                    return id(watering_schedule_error);
+
+  - id: watering_cycle
+    mode: queued
+    then:
+      - lambda: |-
+          auto now = id(sntp_time).now();
+          std::string today = now.strftime("%Y-%m-%d");
+          if (id(today_date) != today) {
+            id(today_date) = today;
+            id(today_watered_seconds_1) = 0;
+            id(today_watered_seconds_2) = 0;
+            id(today_watered_seconds_3) = 0;
+            id(today_watered_seconds_4) = 0;
+          }
+      - if:
+          condition:
+            lambda: |-
+              return !id(tank_empty).state || id(ignore_water_check).state;
+          then:
+            - if:
+                condition:
+                  lambda: |-
+                    return ( !id(tank_empty).state || id(ignore_water_check).state )
+                           && id(watering_seconds_1).state > 0
+                           && (id(watering_schedule_mask) & 0x1)
+                           && (id(daily_limit_1).state == 0 || id(today_watered_seconds_1) < id(daily_limit_1).state);
+                then:
+                  - lambda: |-
+                      id(watering_by_script) = true;
+                  - light.turn_on:
+                      id: pump_1
+                      brightness: !lambda |-
+                        return std::min(1.0f, id(watering_percent_1).state / 100.0f + 0.2f);
+                  - delay: 1000ms
+                  - light.turn_on:
+                      id: pump_1
+                      brightness: !lambda |-
+                        return id(watering_percent_1).state / 100.0f;
+                      transition_length: 1s
+                  - repeat:
+                      count: !lambda |-
+                        return (int)(id(watering_seconds_1).state * 10);
+                      then:
+                        - delay: 100ms
+                        - if:
+                            condition:
+                              lambda: |-
+                                return id(tank_empty).state && !id(ignore_water_check).state;
+                            then:
+                              - light.turn_off: pump_1
+                              - lambda: |-
+                                  id(watering_by_script) = false;
+                              - script.stop: watering_cycle
+                  - light.turn_off: pump_1
+                  - lambda: |-
+                      id(watering_by_script) = false;
+                      id(today_watered_seconds_1) += (int)id(watering_seconds_1).state;
+                  - sensor.template.publish:
+                      id: today_seconds_1
+                      state: !lambda "return (float)id(today_watered_seconds_1);"
+            - if:
+                condition:
+                  lambda: |-
+                    return ( !id(tank_empty).state || id(ignore_water_check).state )
+                           && id(watering_seconds_2).state > 0
+                           && (id(watering_schedule_mask) & 0x2)
+                           && (id(daily_limit_2).state == 0 || id(today_watered_seconds_2) < id(daily_limit_2).state);
+                then:
+                  - lambda: |-
+                      id(watering_by_script) = true;
+                  - light.turn_on:
+                      id: pump_2
+                      brightness: !lambda |-
+                        return std::min(1.0f, id(watering_percent_2).state / 100.0f + 0.2f);
+                  - delay: 1000ms
+                  - light.turn_on:
+                      id: pump_2
+                      brightness: !lambda |-
+                        return id(watering_percent_2).state / 100.0f;
+                      transition_length: 1s
+                  - repeat:
+                      count: !lambda |-
+                        return (int)(id(watering_seconds_2).state * 10);
+                      then:
+                        - delay: 100ms
+                        - if:
+                            condition:
+                              lambda: |-
+                                return id(tank_empty).state && !id(ignore_water_check).state;
+                            then:
+                              - light.turn_off: pump_2
+                              - lambda: |-
+                                  id(watering_by_script) = false;
+                              - script.stop: watering_cycle
+                  - light.turn_off: pump_2
+                  - lambda: |-
+                      id(watering_by_script) = false;
+                      id(today_watered_seconds_2) += (int)id(watering_seconds_2).state;
+                  - sensor.template.publish:
+                      id: today_seconds_2
+                      state: !lambda "return (float)id(today_watered_seconds_2);"
+            - if:
+                condition:
+                  lambda: |-
+                    return ( !id(tank_empty).state || id(ignore_water_check).state )
+                           && id(watering_seconds_3).state > 0
+                           && (id(watering_schedule_mask) & 0x4)
+                           && (id(daily_limit_3).state == 0 || id(today_watered_seconds_3) < id(daily_limit_3).state);
+                then:
+                  - lambda: |-
+                      id(watering_by_script) = true;
+                  - light.turn_on:
+                      id: pump_3
+                      brightness: !lambda |-
+                        return std::min(1.0f, id(watering_percent_3).state / 100.0f + 0.2f);
+                  - delay: 1000ms
+                  - light.turn_on:
+                      id: pump_3
+                      brightness: !lambda |-
+                        return id(watering_percent_3).state / 100.0f;
+                      transition_length: 1s
+                  - repeat:
+                      count: !lambda |-
+                        return (int)(id(watering_seconds_3).state * 10);
+                      then:
+                        - delay: 100ms
+                        - if:
+                            condition:
+                              lambda: |-
+                                return id(tank_empty).state && !id(ignore_water_check).state;
+                            then:
+                              - light.turn_off: pump_3
+                              - lambda: |-
+                                  id(watering_by_script) = false;
+                              - script.stop: watering_cycle
+                  - light.turn_off: pump_3
+                  - lambda: |-
+                      id(watering_by_script) = false;
+                      id(today_watered_seconds_3) += (int)id(watering_seconds_3).state;
+                  - sensor.template.publish:
+                      id: today_seconds_3
+                      state: !lambda "return (float)id(today_watered_seconds_3);"
+            - if:
+                condition:
+                  lambda: |-
+                    return ( !id(tank_empty).state || id(ignore_water_check).state )
+                           && id(watering_seconds_4).state > 0
+                           && (id(watering_schedule_mask) & 0x8)
+                           && (id(daily_limit_4).state == 0 || id(today_watered_seconds_4) < id(daily_limit_4).state);
+                then:
+                  - lambda: |-
+                      id(watering_by_script) = true;
+                  - light.turn_on:
+                      id: pump_4
+                      brightness: !lambda |-
+                        return std::min(1.0f, id(watering_percent_4).state / 100.0f + 0.2f);
+                  - delay: 1000ms
+                  - light.turn_on:
+                      id: pump_4
+                      brightness: !lambda |-
+                        return id(watering_percent_4).state / 100.0f;
+                      transition_length: 1s
+                  - repeat:
+                      count: !lambda |-
+                        return (int)(id(watering_seconds_4).state * 10);
+                      then:
+                        - delay: 100ms
+                        - if:
+                            condition:
+                              lambda: |-
+                                return id(tank_empty).state && !id(ignore_water_check).state;
+                            then:
+                              - light.turn_off: pump_4
+                              - lambda: |-
+                                  id(watering_by_script) = false;
+                              - script.stop: watering_cycle
+                  - light.turn_off: pump_4
+                  - lambda: |-
+                      id(watering_by_script) = false;
+                      id(today_watered_seconds_4) += (int)id(watering_seconds_4).state;
+                  - sensor.template.publish:
+                      id: today_seconds_4
+                      state: !lambda "return (float)id(today_watered_seconds_4);"
+            - lambda: |-
+                id(watering_schedule_mask) = 0;
+          else:
+            - logger.log: "水箱缺水，跳过定时浇水"
+
+  - id: watering_schedule_check
+    mode: queued
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (id(watering_mode).current_option() != "定时") return false;
+              if (!id(watering_schedule_error).empty()) return false;
+              if (!id(sntp_time).now().is_valid()) return false;
+
+              auto now = id(sntp_time).now();
+              std::string current_minute = now.strftime("%H:%M");
+              std::string current_slot = now.strftime("%Y-%m-%d %H:%M");
+              if (id(last_watering_schedule_fire) == current_slot) return false;
+
+              std::string schedule = id(watering_times).state;
+              auto trim = [](std::string value) -> std::string {
+                const char* ws = " \t\r\n";
+                size_t start = value.find_first_not_of(ws);
+                if (start == std::string::npos) return "";
+                size_t end = value.find_last_not_of(ws);
+                return value.substr(start, end - start + 1);
+              };
+              auto is_valid_hhmm = [](const std::string &value) -> bool {
+                if (value.size() != 5) return false;
+                if (value[2] != ':') return false;
+                if (!std::isdigit((unsigned char)value[0])) return false;
+                if (!std::isdigit((unsigned char)value[1])) return false;
+                if (!std::isdigit((unsigned char)value[3])) return false;
+                if (!std::isdigit((unsigned char)value[4])) return false;
+                int hour = (value[0] - '0') * 10 + (value[1] - '0');
+                int minute = (value[3] - '0') * 10 + (value[4] - '0');
+                return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+              };
+
+              size_t start = 0;
+              while (start < schedule.size()) {
+                size_t end = schedule.find_first_of(",;\n", start);
+                std::string token = schedule.substr(start, end == std::string::npos ? schedule.size() - start : end - start);
+                token = trim(token);
+                if (!token.empty()) {
+                  size_t sep = token.find_first_of("=|");
+                  std::string time_part = trim(sep == std::string::npos ? token : token.substr(0, sep));
+                  std::string mask_part = sep == std::string::npos ? "1234" : trim(token.substr(sep + 1));
+                  if (!is_valid_hhmm(time_part)) {
+                    ESP_LOGW("watering", "Invalid schedule time format: %s", time_part.c_str());
+                    if (start == 0) return false;
+                    if (end == std::string::npos) break;
+                    start = end + 1;
+                    continue;
+                  }
+                  if (time_part == current_minute) {
+                    int mask = 0;
+                    if (sep == std::string::npos) {
+                      mask = 0xF;
+                    } else if (!mask_part.empty()) {
+                      for (char c : mask_part) {
+                        if (c == '1') mask |= 0x1;
+                        if (c == '2') mask |= 0x2;
+                        if (c == '3') mask |= 0x4;
+                        if (c == '4') mask |= 0x8;
+                      }
+                    }
+                    if (mask == 0 && sep != std::string::npos) {
+                      ESP_LOGW("watering", "Invalid schedule mask: %s", mask_part.c_str());
+                      return false;
+                    }
+                    id(watering_schedule_mask) = mask;
+                    id(last_watering_schedule_fire) = current_slot;
+                    return true;
+                  }
+                }
+                if (end == std::string::npos) break;
+                start = end + 1;
+              }
+              return false;
+          then:
+            - logger.log: "触发定时浇水"
+            - script.execute: watering_cycle
+
+button:
+  - platform: template
+    name: "试运行水泵1 Test Pump 1"
+    on_press:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: "return !id(tank_empty).state;"
+                - lambda: "return id(ignore_water_check).state;"
+            then:
+              - lambda: "id(watering_schedule_mask) = 0x1;"
+              - script.execute: watering_cycle
+            else:
+              - logger.log: "水箱缺水，禁止开启水泵"
+
+  - platform: template
+    name: "试运行水泵2 Test Pump 2"
+    on_press:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: "return !id(tank_empty).state;"
+                - lambda: "return id(ignore_water_check).state;"
+            then:
+              - lambda: "id(watering_schedule_mask) = 0x2;"
+              - script.execute: watering_cycle
+            else:
+              - logger.log: "水箱缺水，禁止开启水泵"
+
+  - platform: template
+    name: "试运行水泵3 Test Pump 3"
+    on_press:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: "return !id(tank_empty).state;"
+                - lambda: "return id(ignore_water_check).state;"
+            then:
+              - lambda: "id(watering_schedule_mask) = 0x4;"
+              - script.execute: watering_cycle
+            else:
+              - logger.log: "水箱缺水，禁止开启水泵"
+
+  - platform: template
+    name: "试运行水泵4 Test Pump 4"
+    on_press:
+      then:
+        - if:
+            condition:
+              or:
+                - lambda: "return !id(tank_empty).state;"
+                - lambda: "return id(ignore_water_check).state;"
+            then:
+              - lambda: "id(watering_schedule_mask) = 0x8;"
+              - script.execute: watering_cycle
+            else:
+              - logger.log: "水箱缺水，禁止开启水泵"
