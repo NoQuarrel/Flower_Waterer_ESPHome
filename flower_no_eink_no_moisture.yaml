@@ -66,12 +66,13 @@ time:
       - seconds: 0
         then:
           - script.execute: watering_schedule_check
-      - hours: 0
+      - hours: 0-23
         minutes: 0
         seconds: 0
         then:
           - lambda: |-
               auto now = id(sntp_time).now();
+              if (!now.is_valid()) return; 
               std::string today = now.strftime("%Y-%m-%d");
               if (id(today_date) != today) {
                 id(today_date) = today;
@@ -79,6 +80,10 @@ time:
                 id(today_watered_seconds_2) = 0;
                 id(today_watered_seconds_3) = 0;
                 id(today_watered_seconds_4) = 0;
+                id(today_seconds_1).publish_state(0);
+                id(today_seconds_2).publish_state(0);
+                id(today_seconds_3).publish_state(0);
+                id(today_seconds_4).publish_state(0);
               }
 
 globals:

@@ -1076,7 +1076,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          std::string mode = id(watering_mode).current_option().c_str();
+          std::string mode = id(watering_mode).state;
           auto trim = [](std::string value) -> std::string {
             const char* ws = " \t\r\n";
             size_t start = value.find_first_not_of(ws);
@@ -1145,7 +1145,7 @@ script:
       - text_sensor.template.publish:
           id: watering_schedule_hint
           state: !lambda |-
-            std::string mode = id(watering_mode).current_option().c_str();
+            std::string mode = id(watering_mode).state;
             if (mode == "定时" && !id(watering_schedule_error).empty()) {
               return id(watering_schedule_error);
             } else if (mode == "定时") {
@@ -1176,6 +1176,7 @@ script:
     then:
       - lambda: |-
           auto now = id(sntp_time).now();
+          if (!now.is_valid()) return;
           std::string today = now.strftime("%Y-%m-%d");
           if (id(today_date) != today) {
             id(today_date) = today;
@@ -1183,6 +1184,10 @@ script:
             id(today_watered_seconds_2) = 0;
             id(today_watered_seconds_3) = 0;
             id(today_watered_seconds_4) = 0;
+            id(today_seconds_1).publish_state(0);
+            id(today_seconds_2).publish_state(0);
+            id(today_seconds_3).publish_state(0);
+            id(today_seconds_4).publish_state(0);
           }
       - if:
           condition:
@@ -1364,7 +1369,7 @@ script:
       - if:
           condition:
             lambda: |-
-              if (id(watering_mode).current_option() != "定时") return false;
+              if (id(watering_mode).state != "定时") return false;
               if (!id(watering_schedule_error).empty()) return false;
               if (!id(sntp_time).now().is_valid()) return false;
 
@@ -1444,7 +1449,7 @@ script:
       - if:
           condition:
             lambda: |-
-              if (id(watering_mode).current_option() != "传感器") return false;
+              if (id(watering_mode).state != "传感器") return false;
               if (!id(sntp_time).now().is_valid()) return false;
 
               auto now = id(sntp_time).now();
@@ -1550,6 +1555,7 @@ script:
       - script.execute: watering_sensor_check
       - lambda: |-
           auto now = id(sntp_time).now();
+          if (!now.is_valid()) return; 
           std::string today = now.strftime("%Y-%m-%d");
           if (id(today_date) != today) {
             id(today_date) = today;
@@ -1557,6 +1563,10 @@ script:
             id(today_watered_seconds_2) = 0;
             id(today_watered_seconds_3) = 0;
             id(today_watered_seconds_4) = 0;
+            id(today_seconds_1).publish_state(0);
+            id(today_seconds_2).publish_state(0);
+            id(today_seconds_3).publish_state(0);
+            id(today_seconds_4).publish_state(0);
           }
 
 button:
