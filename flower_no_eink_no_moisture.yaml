@@ -790,7 +790,7 @@ script:
                   - light.turn_on:
                       id: pump_1
                       brightness: !lambda |-
-                        return std::min(1.0f, id(watering_percent_1).state / 100.0f + 0.2f);
+                        return std::min(1.0f, id(watering_percent_1).state / 100.0f + 0.5f);
                   - delay: 1000ms
                   - light.turn_on:
                       id: pump_1
@@ -831,7 +831,7 @@ script:
                   - light.turn_on:
                       id: pump_2
                       brightness: !lambda |-
-                        return std::min(1.0f, id(watering_percent_2).state / 100.0f + 0.2f);
+                        return std::min(1.0f, id(watering_percent_2).state / 100.0f + 0.5f);
                   - delay: 1000ms
                   - light.turn_on:
                       id: pump_2
@@ -872,7 +872,7 @@ script:
                   - light.turn_on:
                       id: pump_3
                       brightness: !lambda |-
-                        return std::min(1.0f, id(watering_percent_3).state / 100.0f + 0.2f);
+                        return std::min(1.0f, id(watering_percent_3).state / 100.0f + 0.5f);
                   - delay: 1000ms
                   - light.turn_on:
                       id: pump_3
@@ -913,7 +913,7 @@ script:
                   - light.turn_on:
                       id: pump_4
                       brightness: !lambda |-
-                        return std::min(1.0f, id(watering_percent_4).state / 100.0f + 0.2f);
+                        return std::min(1.0f, id(watering_percent_4).state / 100.0f + 0.5f);
                   - delay: 1000ms
                   - light.turn_on:
                       id: pump_4
