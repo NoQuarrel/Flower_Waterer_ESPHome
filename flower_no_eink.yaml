@@ -1,3 +1,5 @@
+#LINK: https://github.com/NoQuarrel/Flower_Waterer_ESPHome
+#VERSION: 1.2
 esphome:
   name: flower
   on_boot:
@@ -32,8 +34,19 @@ esphome:
       - sensor.template.publish:
           id: today_seconds_4
           state: !lambda "return (float)id(today_watered_seconds_4);"
+      - sensor.template.publish:
+          id: predicted_tank_level
+          state: !lambda |-
+            if (id(tank_empty).state) {
+              return 0.0f;
+            }
+            if (id(tank_full_override)) {
+              return 100.0f;
+            }
+            return (float)id(tank_water_level);
       - script.execute: auto_measure_task
-      
+      - delay: 15s      
+
 esp32:
   board: esp32-c3-devkitm-1
   framework:
@@ -82,6 +95,29 @@ globals:
     type: std::string
     restore_value: no
     initial_value: "\"\""
+  - id: tank_water_level
+    type: float
+    restore_value: yes
+    initial_value: "100"
+  - id: tank_full_override
+    type: bool
+    restore_value: yes
+    initial_value: "false"
+  - id: tank_total_used_percent
+    type: float
+    restore_value: yes
+    initial_value: "0"
+  - id: tank_usage_scale
+    type: float
+    restore_value: yes
+  - id: tank_total_calibrated
+    type: bool
+    restore_value: yes
+    initial_value: "false"
+  - id: tank_last_calibrated_percent
+    type: float
+    restore_value: yes
+    initial_value: "100"
   - id: last_watered_1
     type: std::string
     restore_value: yes
@@ -138,6 +174,22 @@ globals:
     type: int
     restore_value: no
     initial_value: "0"
+  - id: pump_start_ms_1
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+  - id: pump_start_ms_2
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+  - id: pump_start_ms_3
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+  - id: pump_start_ms_4
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
   - id: today_watered_seconds_1
     type: int
     restore_value: yes
@@ -171,6 +223,7 @@ select:
       - "关闭"
       - "定时"
       - "传感器"
+      - "传感器+定时"
     initial_option: "关闭"
     on_value:
       then:
@@ -298,7 +351,7 @@ number:
     id: daily_limit_1
     icon: "mdi:timer-outline"
     min_value: 0
-    max_value: 600
+    max_value: 1800
     step: 10
     initial_value: 180
     unit_of_measurement: "s"
@@ -311,7 +364,7 @@ number:
     id: daily_limit_2
     icon: "mdi:timer-outline"
     min_value: 0
-    max_value: 600
+    max_value: 1800
     step: 10
     initial_value: 180
     unit_of_measurement: "s"
@@ -324,7 +377,7 @@ number:
     id: daily_limit_3
     icon: "mdi:timer-outline"
     min_value: 0
-    max_value: 600
+    max_value: 1800
     step: 10
     initial_value: 180
     unit_of_measurement: "s"
@@ -337,7 +390,7 @@ number:
     id: daily_limit_4
     icon: "mdi:timer-outline"
     min_value: 0
-    max_value: 600
+    max_value: 1800
     step: 10
     initial_value: 180
     unit_of_measurement: "s"
@@ -508,7 +561,7 @@ number:
 
 text:
   - platform: template
-    name: "定时浇水 Water Schedule(例如06:30=12,18:00=4)"
+    name: "定时浇水 Water Schedule(例如06:30=12,18:00=4,18:00@67=34)"
     id: watering_times
     icon: "mdi:clock-outline"
     mode: text
@@ -574,6 +627,29 @@ light:
     icon: "mdi:water-pump"
     id: pump_1
     restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_off:
+      then:
+        - lambda: |-
+            uint32_t now = millis();
+            uint32_t start = id(pump_start_ms_1);
+            if (start != 0 && now >= start) {
+              float seconds = (now - start) / 1000.0f;
+              float raw_used = seconds * (id(watering_percent_1).state / 100.0f);
+              float used = raw_used * id(tank_usage_scale);
+              id(tank_total_used_percent) += used;
+              id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
+              if (id(tank_empty).state) {
+                id(tank_water_level) = 0.0f;
+              } else if (id(tank_water_level) <= 0.0f) {
+                id(tank_water_level) = 1.0f;
+              }
+              if (used > 0.0f) id(tank_full_override) = false;
+              id(pump_start_ms_1) = 0;
+              ESP_LOGI("pump_1_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
+                       start, now, seconds, (int)id(watering_percent_1).state,
+                       raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
+            }
+        - component.update: predicted_tank_level
     on_turn_on:
       then:
         - if:
@@ -594,6 +670,8 @@ light:
                           auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
                           id(last_watered_1) = stamp;
                           return stamp;
+                    - lambda: |-
+                        id(pump_start_ms_1) = millis();
                     - if:
                         condition:
                           lambda: |-
@@ -620,6 +698,29 @@ light:
     icon: "mdi:water-pump"
     id: pump_2
     restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_off:
+      then:
+        - lambda: |-
+            uint32_t now = millis();
+            uint32_t start = id(pump_start_ms_2);
+            if (start != 0 && now >= start) {
+              float seconds = (now - start) / 1000.0f;
+              float raw_used = seconds * (id(watering_percent_2).state / 100.0f);
+              float used = raw_used * id(tank_usage_scale);
+              id(tank_total_used_percent) += used;
+              id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
+              if (id(tank_empty).state) {
+                id(tank_water_level) = 0.0f;
+              } else if (id(tank_water_level) <= 0.0f) {
+                id(tank_water_level) = 1.0f;
+              }
+              if (used > 0.0f) id(tank_full_override) = false;
+              id(pump_start_ms_2) = 0;
+              ESP_LOGI("pump_2_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
+                       start, now, seconds, (int)id(watering_percent_2).state,
+                       raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
+            }
+        - component.update: predicted_tank_level
     on_turn_on:
       then:
         - if:
@@ -640,6 +741,8 @@ light:
                           auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
                           id(last_watered_2) = stamp;
                           return stamp;
+                    - lambda: |-
+                        id(pump_start_ms_2) = millis();
                     - if:
                         condition:
                           lambda: |-
@@ -666,6 +769,29 @@ light:
     icon: "mdi:water-pump"
     id: pump_3
     restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_off:
+      then:
+        - lambda: |-
+            uint32_t now = millis();
+            uint32_t start = id(pump_start_ms_3);
+            if (start != 0 && now >= start) {
+              float seconds = (now - start) / 1000.0f;
+              float raw_used = seconds * (id(watering_percent_3).state / 100.0f);
+              float used = raw_used * id(tank_usage_scale);
+              id(tank_total_used_percent) += used;
+              id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
+              if (id(tank_empty).state) {
+                id(tank_water_level) = 0.0f;
+              } else if (id(tank_water_level) <= 0.0f) {
+                id(tank_water_level) = 1.0f;
+              }
+              if (used > 0.0f) id(tank_full_override) = false;
+              id(pump_start_ms_3) = 0;
+              ESP_LOGI("pump_3_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
+                       start, now, seconds, (int)id(watering_percent_3).state,
+                       raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
+            }
+        - component.update: predicted_tank_level
     on_turn_on:
       then:
         - if:
@@ -686,6 +812,8 @@ light:
                           auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
                           id(last_watered_3) = stamp;
                           return stamp;
+                    - lambda: |-
+                        id(pump_start_ms_3) = millis();
                     - if:
                         condition:
                           lambda: |-
@@ -712,6 +840,29 @@ light:
     icon: "mdi:water-pump"
     id: pump_4
     restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_off:
+      then:
+        - lambda: |-
+            uint32_t now = millis();
+            uint32_t start = id(pump_start_ms_4);
+            if (start != 0 && now >= start) {
+              float seconds = (now - start) / 1000.0f;
+              float raw_used = seconds * (id(watering_percent_4).state / 100.0f);
+              float used = raw_used * id(tank_usage_scale);
+              id(tank_total_used_percent) += used;
+              id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
+              if (id(tank_empty).state) {
+                id(tank_water_level) = 0.0f;
+              } else if (id(tank_water_level) <= 0.0f) {
+                id(tank_water_level) = 1.0f;
+              }
+              if (used > 0.0f) id(tank_full_override) = false;
+              id(pump_start_ms_4) = 0;
+              ESP_LOGI("pump_4_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
+                       start, now, seconds, (int)id(watering_percent_4).state,
+                       raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
+            }
+        - component.update: predicted_tank_level
     on_turn_on:
       then:
         - if:
@@ -732,6 +883,8 @@ light:
                           auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
                           id(last_watered_4) = stamp;
                           return stamp;
+                    - lambda: |-
+                        id(pump_start_ms_4) = millis();
                     - if:
                         condition:
                           lambda: |-
@@ -1030,6 +1183,21 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
 
+  - platform: template
+    name: "水箱预测水量 Predicted Water Level"
+    id: predicted_tank_level
+    unit_of_measurement: "%"
+    icon: "mdi:water-percent"
+    accuracy_decimals: 1
+    update_interval: never
+    lambda: |-
+      if (!id(tank_total_calibrated)) return 100.0f;
+      if (id(tank_empty).state) return 0.0f;
+      if (id(tank_full_override)) return 100.0f;
+      float level = id(tank_water_level);
+      if (level <= 0.0f) level = 1.0f;
+      return level;
+
 binary_sensor:
   - platform: gpio
     pin:
@@ -1039,6 +1207,25 @@ binary_sensor:
     name: "水箱缺水"
     icon: "mdi:water"
     id: tank_empty
+    on_state:
+      then:
+        - lambda: |-
+            if (id(tank_empty).state) {
+              id(tank_last_calibrated_percent) = 0.0f;
+              id(tank_full_override) = false;
+              if (!id(tank_total_calibrated) && id(tank_total_used_percent) > 0.0f) {
+                id(tank_usage_scale) = 100.0f / id(tank_total_used_percent);
+                id(tank_total_calibrated) = true;
+                ESP_LOGI("tank_calib", "水箱标定完成: total_used=%.2f scale=%.6f",
+                         id(tank_total_used_percent), id(tank_usage_scale));
+              }
+            } else {
+              id(tank_total_used_percent) = 0.0f;
+              id(tank_water_level) = 100.0f;
+              id(tank_full_override) = true;
+              id(tank_last_calibrated_percent) = 100.0f;
+            }
+        - component.update: predicted_tank_level
 
 text_sensor:
   - platform: template
@@ -1076,7 +1263,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          std::string mode = id(watering_mode).state;
+          std::string mode = id(watering_mode).current_option();
           auto trim = [](std::string value) -> std::string {
             const char* ws = " \t\r\n";
             size_t start = value.find_first_not_of(ws);
@@ -1099,14 +1286,12 @@ script:
 
           std::string schedule = id(watering_times).state;
           std::string error = "";
-          if (mode == "关闭") {
-            error = "";
-          } else if (mode == "传感器") {
+          if (mode == "关闭" || mode == "传感器") {
             error = "";
           } else {
             std::string schedule_trimmed = trim(schedule);
             if (schedule_trimmed.empty()) {
-              error = "请填写定时，例如 06:30=13,18:00=24";
+              error = "请填写定时，例如 06:30=13,18:00=24,18:00@67=34";
             } else {
               size_t start = 0;
               while (start < schedule.size()) {
@@ -1114,26 +1299,58 @@ script:
                 std::string token = schedule.substr(start, end == std::string::npos ? schedule.size() - start : end - start);
                 token = trim(token);
                 if (!token.empty()) {
+                  size_t at_pos = token.find('@');
                   size_t sep = token.find_first_of("=|");
-                  std::string time_part = trim(sep == std::string::npos ? token : token.substr(0, sep));
+                  size_t time_end = std::string::npos;
+                  if (at_pos != std::string::npos) {
+                    time_end = at_pos;
+                  } else if (sep != std::string::npos) {
+                    time_end = sep;
+                  } else {
+                    time_end = token.size();
+                  }
+                  std::string time_part = trim(token.substr(0, time_end));
                   if (!is_valid_hhmm(time_part)) {
                     error = "定时错误: " + time_part + " 不是 HH:MM";
                     break;
                   }
-                  if (sep != std::string::npos) {
-                    std::string mask_part = trim(token.substr(sep + 1));
-                    if (mask_part.empty()) {
-                      error = "定时错误: " + time_part + "= 后面不能为空";
+
+                  std::string weekday_part;
+                  std::string mask_part = "1234";
+                  if (at_pos != std::string::npos) {
+                    size_t weekday_end = sep == std::string::npos ? token.size() : sep;
+                    weekday_part = trim(token.substr(at_pos + 1, weekday_end - (at_pos + 1)));
+                    if (weekday_part.empty()) {
+                      error = "定时错误: @ 后面不能为空";
                       break;
                     }
-                    for (char c : mask_part) {
-                      if (c != '1' && c != '2' && c != '3' && c != '4') {
-                        error = "定时错误: 只能包含 1-4";
+                    for (char c : weekday_part) {
+                      if (!std::isdigit((unsigned char)c)) {
+                        error = "定时错误: @ 后面只能是 1-7";
+                        break;
+                      }
+                      int weekday = c - '0';
+                      if (weekday < 1 || weekday > 7) {
+                        error = "定时错误: @ 后面只能是 1-7";
                         break;
                       }
                     }
                     if (!error.empty()) break;
                   }
+                  if (sep != std::string::npos) {
+                    mask_part = trim(token.substr(sep + 1));
+                  }
+                  if (mask_part.empty()) {
+                    error = "定时错误: " + time_part + "= 后面不能为空";
+                    break;
+                  }
+                  for (char c : mask_part) {
+                    if (c != '1' && c != '2' && c != '3' && c != '4') {
+                      error = "定时错误: 只能包含 1-4";
+                      break;
+                    }
+                  }
+                  if (!error.empty()) break;
                 }
                 if (end == std::string::npos) break;
                 start = end + 1;
@@ -1145,11 +1362,11 @@ script:
       - text_sensor.template.publish:
           id: watering_schedule_hint
           state: !lambda |-
-            std::string mode = id(watering_mode).state;
-            if (mode == "定时" && !id(watering_schedule_error).empty()) {
+            std::string mode = id(watering_mode).current_option();
+            if ((mode == "定时" || mode == "传感器+定时") && !id(watering_schedule_error).empty()) {
               return id(watering_schedule_error);
-            } else if (mode == "定时") {
-              return std::string("定时格式正确");
+            } else if (mode == "定时" || mode == "传感器+定时") {
+              return std::string(mode == "传感器+定时" ? "定时格式正确(已设置定时的盆,传感器条件不生效)" : "定时格式正确");
             } else {
               return std::string("未运行定时模式");
             }
@@ -1200,7 +1417,7 @@ script:
                     return ( !id(tank_empty).state || id(ignore_water_check).state )
                            && id(watering_seconds_1).state > 0
                            && (id(watering_schedule_mask) & 0x1)
-                           && (id(daily_limit_1).state == 0 || id(today_watered_seconds_1) < id(daily_limit_1).state);
+                           && (id(daily_limit_1).state > 0 && id(today_watered_seconds_1) < id(daily_limit_1).state);
                 then:
                   - lambda: |-
                       id(watering_by_script) = true;
@@ -1241,7 +1458,7 @@ script:
                     return ( !id(tank_empty).state || id(ignore_water_check).state )
                            && id(watering_seconds_2).state > 0
                            && (id(watering_schedule_mask) & 0x2)
-                           && (id(daily_limit_2).state == 0 || id(today_watered_seconds_2) < id(daily_limit_2).state);
+                           && (id(daily_limit_2).state > 0 && id(today_watered_seconds_2) < id(daily_limit_2).state);
                 then:
                   - lambda: |-
                       id(watering_by_script) = true;
@@ -1282,7 +1499,7 @@ script:
                     return ( !id(tank_empty).state || id(ignore_water_check).state )
                            && id(watering_seconds_3).state > 0
                            && (id(watering_schedule_mask) & 0x4)
-                           && (id(daily_limit_3).state == 0 || id(today_watered_seconds_3) < id(daily_limit_3).state);
+                           && (id(daily_limit_3).state > 0 && id(today_watered_seconds_3) < id(daily_limit_3).state);
                 then:
                   - lambda: |-
                       id(watering_by_script) = true;
@@ -1323,7 +1540,7 @@ script:
                     return ( !id(tank_empty).state || id(ignore_water_check).state )
                            && id(watering_seconds_4).state > 0
                            && (id(watering_schedule_mask) & 0x8)
-                           && (id(daily_limit_4).state == 0 || id(today_watered_seconds_4) < id(daily_limit_4).state);
+                           && (id(daily_limit_4).state > 0 && id(today_watered_seconds_4) < id(daily_limit_4).state);
                 then:
                   - lambda: |-
                       id(watering_by_script) = true;
@@ -1369,7 +1586,8 @@ script:
       - if:
           condition:
             lambda: |-
-              if (id(watering_mode).state != "定时") return false;
+              std::string mode = id(watering_mode).current_option();
+              if (mode != "定时" && mode != "传感器+定时") return false;
               if (!id(watering_schedule_error).empty()) return false;
               if (!id(sntp_time).now().is_valid()) return false;
 
@@ -1398,14 +1616,29 @@ script:
                 return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
               };
 
+              std::string current_weekday = now.strftime("%u");
               size_t start = 0;
               while (start < schedule.size()) {
                 size_t end = schedule.find_first_of(",;\n", start);
                 std::string token = schedule.substr(start, end == std::string::npos ? schedule.size() - start : end - start);
                 token = trim(token);
                 if (!token.empty()) {
+                  size_t at_pos = token.find('@');
                   size_t sep = token.find_first_of("=|");
-                  std::string time_part = trim(sep == std::string::npos ? token : token.substr(0, sep));
+                  size_t time_end = std::string::npos;
+                  if (at_pos != std::string::npos) {
+                    time_end = at_pos;
+                  } else if (sep != std::string::npos) {
+                    time_end = sep;
+                  } else {
+                    time_end = token.size();
+                  }
+                  std::string time_part = trim(token.substr(0, time_end));
+                  std::string weekday_part;
+                  if (at_pos != std::string::npos) {
+                    size_t weekday_end = sep == std::string::npos ? token.size() : sep;
+                    weekday_part = trim(token.substr(at_pos + 1, weekday_end - (at_pos + 1)));
+                  }
                   std::string mask_part = sep == std::string::npos ? "1234" : trim(token.substr(sep + 1));
                   if (!is_valid_hhmm(time_part)) {
                     ESP_LOGW("watering", "Invalid schedule time format: %s", time_part.c_str());
@@ -1414,7 +1647,19 @@ script:
                     start = end + 1;
                     continue;
                   }
-                  if (time_part == current_minute) {
+
+                  bool weekday_ok = weekday_part.empty();
+                  if (!weekday_ok) {
+                    weekday_ok = false;
+                    for (char c : weekday_part) {
+                      if (std::string(1, c) == current_weekday) {
+                        weekday_ok = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  if (time_part == current_minute && weekday_ok) {
                     int mask = 0;
                     if (sep == std::string::npos) {
                       mask = 0xF;
@@ -1449,16 +1694,82 @@ script:
       - if:
           condition:
             lambda: |-
-              if (id(watering_mode).state != "传感器") return false;
+              std::string mode = id(watering_mode).current_option();
+              if (mode != "传感器" && mode != "传感器+定时") return false;
               if (!id(sntp_time).now().is_valid()) return false;
 
               auto now = id(sntp_time).now();
+              int scheduled_mask = 0;
+              if (mode == "传感器+定时") {
+                std::string schedule = id(watering_times).state;
+                auto trim = [](std::string value) -> std::string {
+                  const char* ws = " \t\r\n";
+                  size_t start = value.find_first_not_of(ws);
+                  if (start == std::string::npos) return "";
+                  size_t end = value.find_last_not_of(ws);
+                  return value.substr(start, end - start + 1);
+                };
+                auto is_valid_hhmm = [](const std::string &value) -> bool {
+                  if (value.size() != 5) return false;
+                  if (value[2] != ':') return false;
+                  if (!std::isdigit((unsigned char)value[0])) return false;
+                  if (!std::isdigit((unsigned char)value[1])) return false;
+                  if (!std::isdigit((unsigned char)value[3])) return false;
+                  if (!std::isdigit((unsigned char)value[4])) return false;
+                  int hour = (value[0] - '0') * 10 + (value[1] - '0');
+                  int minute = (value[3] - '0') * 10 + (value[4] - '0');
+                  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+                };
+                size_t start = 0;
+                while (start < schedule.size()) {
+                  size_t end = schedule.find_first_of(",;\n", start);
+                  std::string token = schedule.substr(start, end == std::string::npos ? schedule.size() - start : end - start);
+                  token = trim(token);
+                  if (!token.empty()) {
+                    size_t at_pos = token.find('@');
+                    size_t sep = token.find_first_of("=|");
+                    size_t time_end = std::string::npos;
+                    if (at_pos != std::string::npos) {
+                      time_end = at_pos;
+                    } else if (sep != std::string::npos) {
+                      time_end = sep;
+                    } else {
+                      time_end = token.size();
+                    }
+                    std::string time_part = trim(token.substr(0, time_end));
+                    std::string mask_part = sep == std::string::npos ? "1234" : trim(token.substr(sep + 1));
+                    if (is_valid_hhmm(time_part)) {
+                      int mask = 0;
+                      if (sep == std::string::npos) {
+                        mask = 0xF;
+                      } else if (!mask_part.empty()) {
+                        for (char c : mask_part) {
+                          if (c == '1') mask |= 0x1;
+                          if (c == '2') mask |= 0x2;
+                          if (c == '3') mask |= 0x4;
+                          if (c == '4') mask |= 0x8;
+                        }
+                      }
+                      if (mask != 0) {
+                        scheduled_mask |= mask;
+                      }
+                    }
+                  }
+                  if (end == std::string::npos) break;
+                  start = end + 1;
+                }
+              }
+
               uint32_t now_ts = now.timestamp;
               uint32_t hold_s = (uint32_t) id(sensor_watering_hold_minutes).state * 60U;
               int mask = 0;
 
               if (id(percent_1).has_state()) {
-                if (id(percent_1).state < id(sensor_watering_threshold_1).state) {
+                if ((scheduled_mask & 0x1) != 0) {
+                  id(sensor_low_since_1) = 0;
+                } else if (id(daily_limit_1).state == 0 || id(sensor_watering_threshold_1).state >= 100.0f) {
+                  id(sensor_low_since_1) = 0;
+                } else if (id(percent_1).state < id(sensor_watering_threshold_1).state) {
                   if (id(sensor_low_since_1) == 0) id(sensor_low_since_1) = now_ts;
                   if (now_ts >= id(sensor_low_since_1) && (now_ts - id(sensor_low_since_1)) >= hold_s) {
                     mask |= 0x1;
@@ -1470,7 +1781,11 @@ script:
               }
 
               if (id(percent_2).has_state()) {
-                if (id(percent_2).state < id(sensor_watering_threshold_2).state) {
+                if ((scheduled_mask & 0x2) != 0) {
+                  id(sensor_low_since_2) = 0;
+                } else if (id(daily_limit_2).state == 0 || id(sensor_watering_threshold_2).state >= 100.0f) {
+                  id(sensor_low_since_2) = 0;
+                } else if (id(percent_2).state < id(sensor_watering_threshold_2).state) {
                   if (id(sensor_low_since_2) == 0) id(sensor_low_since_2) = now_ts;
                   if (now_ts >= id(sensor_low_since_2) && (now_ts - id(sensor_low_since_2)) >= hold_s) {
                     mask |= 0x2;
@@ -1482,7 +1797,11 @@ script:
               }
 
               if (id(percent_3).has_state()) {
-                if (id(percent_3).state < id(sensor_watering_threshold_3).state) {
+                if ((scheduled_mask & 0x4) != 0) {
+                  id(sensor_low_since_3) = 0;
+                } else if (id(daily_limit_3).state == 0 || id(sensor_watering_threshold_3).state >= 100.0f) {
+                  id(sensor_low_since_3) = 0;
+                } else if (id(percent_3).state < id(sensor_watering_threshold_3).state) {
                   if (id(sensor_low_since_3) == 0) id(sensor_low_since_3) = now_ts;
                   if (now_ts >= id(sensor_low_since_3) && (now_ts - id(sensor_low_since_3)) >= hold_s) {
                     mask |= 0x4;
@@ -1494,7 +1813,11 @@ script:
               }
 
               if (id(percent_4).has_state()) {
-                if (id(percent_4).state < id(sensor_watering_threshold_4).state) {
+                if ((scheduled_mask & 0x8) != 0) {
+                  id(sensor_low_since_4) = 0;
+                } else if (id(daily_limit_4).state == 0 || id(sensor_watering_threshold_4).state >= 100.0f) {
+                  id(sensor_low_since_4) = 0;
+                } else if (id(percent_4).state < id(sensor_watering_threshold_4).state) {
                   if (id(sensor_low_since_4) == 0) id(sensor_low_since_4) = now_ts;
                   if (now_ts >= id(sensor_low_since_4) && (now_ts - id(sensor_low_since_4)) >= hold_s) {
                     mask |= 0x8;
@@ -1635,3 +1958,37 @@ button:
     on_press:
       then:
         - script.execute: measure_all
+        
+  - platform: template
+    name: "重置水量 Reset Water Level"
+    on_press:
+      then:
+        - lambda: |-
+            id(tank_total_used_percent) = 0.0f;
+            id(tank_water_level) = 100.0f;
+            id(tank_full_override) = true;
+            id(tank_last_calibrated_percent) = 100.0f;
+            id(pump_start_ms_1) = 0;
+            id(pump_start_ms_2) = 0;
+            id(pump_start_ms_3) = 0;
+            id(pump_start_ms_4) = 0;
+        - logger.log: "水量已重置"
+        - component.update: predicted_tank_level
+
+  - platform: template
+    name: "满水校准 Calibrate Full"
+    on_press:
+      then:
+        - lambda: |-
+            id(tank_total_used_percent) = 0.0f;
+            id(tank_water_level) = 100.0f;
+            id(tank_full_override) = true;
+            id(tank_usage_scale) = 1.0f;
+            id(tank_total_calibrated) = false;
+            id(tank_last_calibrated_percent) = 100.0f;
+            id(pump_start_ms_1) = 0;
+            id(pump_start_ms_2) = 0;
+            id(pump_start_ms_3) = 0;
+            id(pump_start_ms_4) = 0;
+        - logger.log: "满水校准：预测水量已重置为100%"
+        - component.update: predicted_tank_level
