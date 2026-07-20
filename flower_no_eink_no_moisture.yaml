@@ -55,6 +55,7 @@ logger:
 api:
   encryption:
     key: !secret flower_api_key
+  reboot_timeout: 0s
 
 ota:
   - platform: esphome
@@ -67,6 +68,7 @@ wifi:
   ap:
     ssid: "Flower Fallback Hotspot"
     password: !secret flower_ap_password
+  reboot_timeout: 0s
 
 captive_portal:
 

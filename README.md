@@ -1,6 +1,6 @@
 # Flower Waterer ESPHome
 
-这是 https://makerworld.com.cn/zh/models/2440357 模型的 ESPHome 配置文件仓库。
+https://makerworld.com.cn/zh/models/2440357 模型的 ESPHome 配置文件仓库。
 
 ## 文件说明
 
@@ -8,3 +8,7 @@
 - **flower_no_eink.yaml** - 移除墨水屏，保留土壤湿度传感器
 - **flower_no_eink_no_moisture.yaml** - 移除墨水屏和土壤湿度传感器，仅保留基础浇水功能
 - **HarmonyOS_Sans_SC_Regular.ttf** - 墨水屏显示用字体文件
+
+## 更新日志
+- V1.2 (2026/07/16) : 增加浇水模式，预测水量，每周第*天定时浇水
+- V1.3 (2026/07/20) : 修复断网后自动重启
