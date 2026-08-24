@@ -1,5 +1,5 @@
 #LINK: https://github.com/NoQuarrel/Flower_Waterer_ESPHome
-#VERSION: 1.3
+#VERSION: 1.4
 esphome:
   name: flower
   on_boot:
@@ -81,7 +81,7 @@ font:
     size: 12
     glyphs: "
       0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,=%/:-：。年月\
-      日时分电池信号强度箱满缺正常水压上次从未存在浇关闭定传感器错误①②③④同步中间更新当前模式已无记录+"
+      日时分天小刚钟电池信号强度箱满缺正常水压上次从未存在浇关闭定传感器错误①②③④同步中间更新当前模式已无记录+"
 
   - file: "HarmonyOS_Sans_SC_Regular.ttf"
     id: font_status
@@ -164,6 +164,22 @@ globals:
     restore_value: yes
     max_restore_data_length: 16
     initial_value: "\"无记录\""
+  - id: last_watered_stamp_1
+    type: uint32_t
+    restore_value: yes
+    initial_value: "0"
+  - id: last_watered_stamp_2
+    type: uint32_t
+    restore_value: yes
+    initial_value: "0"
+  - id: last_watered_stamp_3
+    type: uint32_t
+    restore_value: yes
+    initial_value: "0"
+  - id: last_watered_stamp_4
+    type: uint32_t
+    restore_value: yes
+    initial_value: "0"
   - id: sensor_low_since_1
     type: uint32_t
     restore_value: no
@@ -617,6 +633,20 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
 
+  - platform: template
+    name: "上次浇水显示相对时间 (x分钟前)"
+    id: display_relative_time
+    icon: "mdi:clock-edit-outline"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "水量百分比显示"
+    id: display_tank_percent
+    icon: "mdi:water-percent"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
   - platform: gpio
     pin: 8
     id: vcc_1
@@ -678,13 +708,13 @@ light:
               id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
               if (id(tank_empty).state) {
                 id(tank_water_level) = 0.0f;
-              } else if (id(tank_water_level) <= 0.0f) {
+              } else if (id(tank_water_level) < 1.0f) {
                 id(tank_water_level) = 1.0f;
               }
               if (used > 0.0f) id(tank_full_override) = false;
               id(pump_start_ms_1) = 0;
               ESP_LOGI("pump_1_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
-                       start, now, seconds, (int)id(watering_percent_1).state,
+                       (unsigned int)start, (unsigned int)now, seconds, (int)id(watering_percent_1).state,
                        raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
             }
         - component.update: predicted_tank_level
@@ -705,8 +735,10 @@ light:
                     - text_sensor.template.publish:
                         id: watered_1
                         state: !lambda |-
-                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          auto now_esp = id(sntp_time).now();
+                          auto stamp = now_esp.strftime("%m-%d %H:%M");
                           id(last_watered_1) = stamp;
+                          id(last_watered_stamp_1) = (uint32_t)now_esp.timestamp;
                           return stamp;
                     - lambda: |-
                         id(pump_start_ms_1) = millis();
@@ -749,13 +781,13 @@ light:
               id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
               if (id(tank_empty).state) {
                 id(tank_water_level) = 0.0f;
-              } else if (id(tank_water_level) <= 0.0f) {
+              } else if (id(tank_water_level) < 1.0f) {
                 id(tank_water_level) = 1.0f;
               }
               if (used > 0.0f) id(tank_full_override) = false;
               id(pump_start_ms_2) = 0;
               ESP_LOGI("pump_2_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
-                       start, now, seconds, (int)id(watering_percent_2).state,
+                       (unsigned int)start, (unsigned int)now, seconds, (int)id(watering_percent_2).state,
                        raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
             }
         - component.update: predicted_tank_level
@@ -776,8 +808,10 @@ light:
                     - text_sensor.template.publish:
                         id: watered_2
                         state: !lambda |-
-                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          auto now_esp = id(sntp_time).now();
+                          auto stamp = now_esp.strftime("%m-%d %H:%M");
                           id(last_watered_2) = stamp;
+                          id(last_watered_stamp_2) = (uint32_t)now_esp.timestamp;
                           return stamp;
                     - lambda: |-
                         id(pump_start_ms_2) = millis();
@@ -820,13 +854,13 @@ light:
               id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
               if (id(tank_empty).state) {
                 id(tank_water_level) = 0.0f;
-              } else if (id(tank_water_level) <= 0.0f) {
+              } else if (id(tank_water_level) < 1.0f) {
                 id(tank_water_level) = 1.0f;
               }
               if (used > 0.0f) id(tank_full_override) = false;
               id(pump_start_ms_3) = 0;
               ESP_LOGI("pump_3_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
-                       start, now, seconds, (int)id(watering_percent_3).state,
+                       (unsigned int)start, (unsigned int)now, seconds, (int)id(watering_percent_3).state,
                        raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
             }
         - component.update: predicted_tank_level
@@ -847,8 +881,10 @@ light:
                     - text_sensor.template.publish:
                         id: watered_3
                         state: !lambda |-
-                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          auto now_esp = id(sntp_time).now();
+                          auto stamp = now_esp.strftime("%m-%d %H:%M");
                           id(last_watered_3) = stamp;
+                          id(last_watered_stamp_3) = (uint32_t)now_esp.timestamp;
                           return stamp;
                     - lambda: |-
                         id(pump_start_ms_3) = millis();
@@ -891,13 +927,13 @@ light:
               id(tank_water_level) = std::max(0.0f, 100.0f - id(tank_total_used_percent));
               if (id(tank_empty).state) {
                 id(tank_water_level) = 0.0f;
-              } else if (id(tank_water_level) <= 0.0f) {
+              } else if (id(tank_water_level) < 1.0f) {
                 id(tank_water_level) = 1.0f;
               }
               if (used > 0.0f) id(tank_full_override) = false;
               id(pump_start_ms_4) = 0;
               ESP_LOGI("pump_4_calc", "start=%u now=%u seconds=%.2f power=%d%% raw_used=%.2f used=%.2f scale=%.6f total_used=%.2f water_level=%.2f",
-                       start, now, seconds, (int)id(watering_percent_4).state,
+                       (unsigned int)start, (unsigned int)now, seconds, (int)id(watering_percent_4).state,
                        raw_used, used, id(tank_usage_scale), id(tank_total_used_percent), id(tank_water_level));
             }
         - component.update: predicted_tank_level
@@ -918,8 +954,10 @@ light:
                     - text_sensor.template.publish:
                         id: watered_4
                         state: !lambda |-
-                          auto stamp = id(sntp_time).now().strftime("%m-%d %H:%M");
+                          auto now_esp = id(sntp_time).now();
+                          auto stamp = now_esp.strftime("%m-%d %H:%M");
                           id(last_watered_4) = stamp;
+                          id(last_watered_stamp_4) = (uint32_t)now_esp.timestamp;
                           return stamp;
                     - lambda: |-
                         id(pump_start_ms_4) = millis();
@@ -1233,7 +1271,7 @@ sensor:
       if (id(tank_empty).state) return 0.0f;
       if (id(tank_full_override)) return 100.0f;
       float level = id(tank_water_level);
-      if (level <= 0.0f) level = 1.0f;
+      if (level < 1.0f) level = 1.0f;
       return level;
 
 binary_sensor:
@@ -1330,7 +1368,21 @@ display:
       }
 
       std::string mode_text = id(watering_mode).current_option();
-      std::string tank_text = id(tank_empty).state ? "水箱:缺水" : "水箱:正常";
+      std::string tank_text;
+      if (id(display_tank_percent).state) {
+        char tank_buf[16];
+        if (id(tank_empty).state || (id(predicted_tank_level).has_state() && id(predicted_tank_level).state <= 0.0f)) {
+          tank_text = "水箱:缺水";
+        } else if (id(predicted_tank_level).has_state()) {
+          snprintf(tank_buf, sizeof(tank_buf), "水箱:%.0f%%", id(predicted_tank_level).state);
+          tank_text = tank_buf;
+        } else {
+          snprintf(tank_buf, sizeof(tank_buf), "水箱:%.0f%%", id(tank_water_level));
+          tank_text = tank_buf;
+        }
+      } else {
+        tank_text = id(tank_empty).state ? "水箱:缺水" : "水箱:正常";
+      }
       std::string right_text;
       if (!id(watering_schedule_error).empty()) {
         right_text = "浇水:定时错误!";
@@ -1355,9 +1407,12 @@ display:
       } else {
         tank_x = 154;
       }
+      if (id(display_tank_percent).state) {
+        tank_x -= 8;
+      }
       it.print(tank_x, 4, id(font_status), tank_text.c_str());
 
-      auto draw_cell = [&](int x, int y, const char* icon, sensor::Sensor* s_p, sensor::Sensor* s_v, text_sensor::TextSensor* s_t, sensor::Sensor* s_today) {
+      auto draw_cell = [&](int x, int y, const char* icon, sensor::Sensor* s_p, sensor::Sensor* s_v, text_sensor::TextSensor* s_t, sensor::Sensor* s_today, uint32_t last_stamp) {
           it.print(x + 5, y + 2, id(font_large), icon); 
           if (s_p->has_state()) {
             it.printf(x + 143, y + 2, id(font_large), TextAlign::TOP_RIGHT, "%.0f%%", s_p->state);
@@ -1369,16 +1424,41 @@ display:
             it.printf(x + 60, y + 2, id(font_tiny), TextAlign::TOP_CENTER, "%.0fs", s_today->state);
           }
           // 上次时间与电压平齐在底部 y+38
-          it.printf(x + 5, y + 38, id(font_tiny), "上次:%s", s_t->state.c_str());
+          std::string last_text;
+          if (id(display_relative_time).state) {
+            auto now_esp = id(sntp_time).now();
+            if (last_stamp != 0 && now_esp.is_valid()) {
+              int64_t diff = (int64_t)now_esp.timestamp - (int64_t)last_stamp;
+              if (diff < 0) diff = 0;
+              if (diff < 60) {
+                last_text = "刚刚";
+              } else if (diff < 3600) {
+                last_text = std::to_string(diff / 60) + "分钟前";
+              } else if (diff < 86400) {
+                int h = diff / 3600;
+                int m = (diff % 3600) / 60;
+                last_text = std::to_string(h) + "小时" + std::to_string(m) + "分前";
+              } else {
+                int d = diff / 86400;
+                int h = (diff % 86400) / 3600;
+                last_text = std::to_string(d) + "天" + std::to_string(h) + "小时前";
+              }
+            } else {
+              last_text = (last_stamp == 0) ? "从未" : s_t->state.c_str();
+            }
+          } else {
+            last_text = s_t->state.c_str();
+          }
+          it.printf(x + 5, y + 38, id(font_tiny), "上次:%s", last_text.c_str());
           if (s_v->has_state()) {
             it.printf(x + 143, y + 38, id(font_tiny), TextAlign::TOP_RIGHT, "%.2fV", s_v->state);
           }
       };
 
-      draw_cell(0, 22, "①", id(percent_1), id(raw_1), id(watered_1), id(today_seconds_1));
-      draw_cell(148, 22, "②", id(percent_2), id(raw_2), id(watered_2), id(today_seconds_2));
-      draw_cell(0, 75, "③", id(percent_3), id(raw_3), id(watered_3), id(today_seconds_3));
-      draw_cell(148, 75, "④", id(percent_4), id(raw_4), id(watered_4), id(today_seconds_4));
+      draw_cell(0, 22, "①", id(percent_1), id(raw_1), id(watered_1), id(today_seconds_1), id(last_watered_stamp_1));
+      draw_cell(148, 22, "②", id(percent_2), id(raw_2), id(watered_2), id(today_seconds_2), id(last_watered_stamp_2));
+      draw_cell(0, 75, "③", id(percent_3), id(raw_3), id(watered_3), id(today_seconds_3), id(last_watered_stamp_3));
+      draw_cell(148, 75, "④", id(percent_4), id(raw_4), id(watered_4), id(today_seconds_4), id(last_watered_stamp_4));
 
 # ==========================================
 # 脚本
@@ -2133,5 +2213,5 @@ button:
             id(pump_start_ms_2) = 0;
             id(pump_start_ms_3) = 0;
             id(pump_start_ms_4) = 0;
-        - logger.log: "满水校准：预测水量已重置为100%"
+        - logger.log: "满水校准：预测水量已重置为100%%"
         - component.update: predicted_tank_level
